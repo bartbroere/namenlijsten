@@ -1,7 +1,6 @@
 import hashlib
 import string
 from collections import namedtuple
-from glob import glob
 from random import shuffle
 
 import bs4
@@ -15,7 +14,13 @@ from tqdm import tqdm
 @sleep_and_retry
 @limits(calls=1, period=4)
 def get_directory(offset, letter, treffers):
-    return requests.get(f'https://www.cbgfamilienamen.nl/nfb/lijst_namen.php?offset={offset}&naam={letter}&treffers={treffers}&operator=bw')
+    return requests.get(f'https://www.cbgfamilienamen.nl/nfb/lijst_namen.php',
+                        params={
+                            'offset': offset,
+                            'letter': letter,
+                            'treffers': treffers,
+                            'operator': 'bw',
+                        })
 
 
 def download_page(link):
@@ -41,6 +46,9 @@ if __name__ == '__main__':
     letters = list(string.ascii_lowercase)
     shuffle(letters)
 
+    AchternaamRecord = namedtuple("AchernaamRecord", ('achternaam', 'counts', 'link'))
+    achternamen = []
+
     for letter in tqdm(letters):
         offset = 0
         treffers = int(
@@ -48,26 +56,18 @@ if __name__ == '__main__':
                 "treffers=")[1].split("&")[0])
         while offset + 50 < treffers:
             offset += 50
-            data = get_directory(offset, letter, treffers)
-            with open(f'data/{letter}-{offset}.html', 'w') as w:
-                w.write(data.text)
+            data = get_directory(offset, letter, treffers).text
 
-    AchternaamRecord = namedtuple("AchernaamRecord", ('achternaam', 'counts', 'link'))
-    achternamen = []
-
-    for filename in glob('data/*-*.html'):
-        data = bs4.BeautifulSoup(open(filename, 'r').read())
-
-        for achternaam in data.select('td.justification-right'):
-            tr = achternaam.parent
-            fields = tr.select('td')
-            achternaam = fields[0].text.strip()
-            try:
-                link = fields[0].select('a')[0].get('href')
-            except:
-                link = None
-            counts = fields[1].text.strip()
-            achternamen.append(AchternaamRecord(achternaam, counts, link))
+            for achternaam in data.select('td.justification-right'):
+                tr = achternaam.parent
+                fields = tr.select('td')
+                achternaam = fields[0].text.strip()
+                try:
+                    link = fields[0].select('a')[0].get('href')
+                except:
+                    link = None
+                counts = fields[1].text.strip()
+                achternamen.append(AchternaamRecord(achternaam, counts, link))
 
     achternamen = pandas.DataFrame(achternamen)
     achternamen.to_csv('achternamen.csv')
