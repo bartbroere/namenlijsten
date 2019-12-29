@@ -22,6 +22,14 @@ def add_gemeenten(row):
             requests.get(f'https://www.cbgfamilienamen.nl/{map_image}')
         except IndexError:
             pass
+        try:
+            rel_detail_page = detail_page.select('td.justification-left ~ td.justification-left > b > a')[0].get('href')
+            rel_detail_page = requests.get(f'https://www.cbgfamilienamen.nl/nfb/{rel_detail_page}').text
+            rel_detail_page = bs4.BeautifulSoup(rel_detail_page, features='html.parser')
+            rel_map_image = rel_detail_page.select('img[usemap]')[0].get('src')
+            requests.get(f'https://www.cbgfamilienamen.nl/{rel_map_image}')
+        except:
+            pass
         # try:
         #     detail_page.select('script:not([async])')[0].text
         # except IndexError:
