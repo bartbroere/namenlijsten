@@ -1,4 +1,3 @@
-import hashlib
 import string
 from collections import namedtuple
 from random import shuffle
@@ -7,27 +6,26 @@ import bs4
 import pandas
 import requests
 import requests_cache
-from ratelimit import limits, sleep_and_retry
 from tqdm import tqdm
 
 
-# @sleep_and_retry
-# @limits(calls=1, period=4)
 def get_directory(offset, letter, treffers):
-    return requests.get(f'https://www.cbgfamilienamen.nl/nfb/lijst_namen.php',
-                        params={
-                            'offset': offset,
-                            'letter': letter,
-                            'treffers': treffers,
-                            'operator': 'bw',
-                        })
+    return requests.get(f'https://www.cbgfamilienamen.nl/nfb/lijst_namen.php?offset={offset}&naam={letter}&treffers={treffers}&operator=bw')
 
 
 def add_gemeenten(row):
     if row.link is not None:
-        detail_page = requests.get(f'https://www.cbgfamilienamen.nl/nfb/{link}').text
-        detail_page = bs4.BeautifulSoup(detail_page)
-        print(detail_page.find('script:not([async])')[0].text)
+        detail_page = requests.get(f'https://www.cbgfamilienamen.nl/nfb/{row.link}').text
+        detail_page = bs4.BeautifulSoup(detail_page, features="html.parser")
+        try:
+            map_image = detail_page.select('img[usemap]')[0].get('src')
+            requests.get(f'https://www.cbgfamilienamen.nl/{map_image}')
+        except IndexError:
+            pass
+        # try:
+        #     detail_page.select('script:not([async])')[0].text
+        # except IndexError:
+        #     pass
 
 
 if __name__ == '__main__':
@@ -47,7 +45,7 @@ if __name__ == '__main__':
                 "treffers=")[1].split("&")[0])
         while offset + 50 < treffers:
             offset += 50
-            data = bs4.BeautifulSoup(get_directory(offset, letter, treffers).text)
+            data = bs4.BeautifulSoup(get_directory(offset, letter, treffers).text, features="html.parser")
 
             for achternaam in data.select('td.justification-right'):
                 tr = achternaam.parent
@@ -61,7 +59,5 @@ if __name__ == '__main__':
                 achternamen.append(AchternaamRecord(achternaam, counts, link))
 
     achternamen = pandas.DataFrame(achternamen)
-    achternamen.to_csv('achternamen.csv')
-
-    achternamen.link.dropna().progress_apply(download_page)
-    achternamen.link.dropna().progress_apply(add_gemeenten)
+    achternamen.to_csv('achternamen.csv.gz', compression='gzip')
+    achternamen.progress_apply(add_gemeenten, axis=1)
