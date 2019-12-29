@@ -10,15 +10,16 @@ from slimit import ast
 from slimit.parser import Parser
 from slimit.visitors import nodevisitor
 from tqdm import tqdm
+from pandarallel import pandarallel
 
 
 def get_directory(offset, letter, treffers):
     return requests.get(f'https://www.cbgfamilienamen.nl/nfb/lijst_namen.php?offset={offset}&naam={letter}&treffers={treffers}&operator=bw')
 
 
-def parse_javascript(data):
+def parse_javascript(javascript_code):
     parser = Parser()
-    tree = parser.parse(data)
+    tree = parser.parse(javascript_code)
     strings_in_javascript = deque(x.value for x in nodevisitor.visit(tree) if isinstance(x, ast.String))
     councils = {}
     if "'GoogleAnalyticsObject'" not in strings_in_javascript:
@@ -47,23 +48,24 @@ def add_gemeenten(row):
         except:
             pass
         # TODO turned off, this needs to be done in parallel
-        # try:
-        #     row['gemeenten'] = parse_javascript(detail_page.select('script:not([async])')[0].text)
-        #     print(row['gemeenten'])
-        # except IndexError:
-        #     pass
+        try:
+            row['gemeenten'] = parse_javascript(detail_page.select('script:not([async])')[0].text)
+        except IndexError:
+            pass
     return row
 
 
 if __name__ == '__main__':
     requests_cache.install_cache('meertens')
     tqdm.pandas()
+    pandarallel.initialize(progress_bar=True)
 
     letters = list(string.ascii_lowercase)
     shuffle(letters)
 
     AchternaamRecord = namedtuple("AchernaamRecord", ('achternaam', 'counts', 'link'))
     achternamen = []
+    # letters = ['be']
 
     for letter in tqdm(letters):
         offset = 0
@@ -86,6 +88,6 @@ if __name__ == '__main__':
                 achternamen.append(AchternaamRecord(achternaam, counts, link))
 
     achternamen = pandas.DataFrame(achternamen)
-    achternamen.progress_apply(add_gemeenten, axis=1)
+    achternamen.parallel_apply(add_gemeenten, axis=1)
     achternamen.to_csv('achternamen.csv.gz', compression='gzip')
     achternamen.to_csv('achternamen.csv')
