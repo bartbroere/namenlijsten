@@ -11,8 +11,8 @@ from ratelimit import limits, sleep_and_retry
 from tqdm import tqdm
 
 
-@sleep_and_retry
-@limits(calls=1, period=4)
+# @sleep_and_retry
+# @limits(calls=1, period=4)
 def get_directory(offset, letter, treffers):
     return requests.get(f'https://www.cbgfamilienamen.nl/nfb/lijst_namen.php',
                         params={
@@ -23,19 +23,10 @@ def get_directory(offset, letter, treffers):
                         })
 
 
-def download_page(link):
-    hashed_link = hashlib.md5()
-    hashed_link.update(link.encode('utf8'))
-    with open('data/' + hashed_link.hexdigest(), 'w') as w:
-        w.write(requests.get(f'https://www.cbgfamilienamen.nl/nfb/{link}').text)
-
-
 def add_gemeenten(row):
     if row.link is not None:
-        hashed_link = hashlib.md5()
-        hashed_link.update(row.link.encode('utf8'))
-        with open('data/' + hashed_link.hexdigest(), 'r') as f:
-            detail_page = bs4.BeautifulSoup(f.read())
+        detail_page = requests.get(f'https://www.cbgfamilienamen.nl/nfb/{link}').text
+        detail_page = bs4.BeautifulSoup(detail_page)
         print(detail_page.find('script:not([async])')[0].text)
 
 
@@ -57,6 +48,7 @@ if __name__ == '__main__':
         while offset + 50 < treffers:
             offset += 50
             data = bs4.BeautifulSoup(get_directory(offset, letter, treffers).text)
+
             for achternaam in data.select('td.justification-right'):
                 tr = achternaam.parent
                 fields = tr.select('td')
