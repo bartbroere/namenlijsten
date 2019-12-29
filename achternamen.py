@@ -56,8 +56,7 @@ if __name__ == '__main__':
                 "treffers=")[1].split("&")[0])
         while offset + 50 < treffers:
             offset += 50
-            data = get_directory(offset, letter, treffers).text
-
+            data = bs4.BeautifulSoup(get_directory(offset, letter, treffers).text)
             for achternaam in data.select('td.justification-right'):
                 tr = achternaam.parent
                 fields = tr.select('td')
