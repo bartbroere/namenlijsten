@@ -1,0 +1,12 @@
+beautifulsoup4
+dask[complete]
+imageio
+pandas
+rasterio
+requests
+requests_cache
+webcolors
+more_itertools
+shapely
+slimit
+tqdm
