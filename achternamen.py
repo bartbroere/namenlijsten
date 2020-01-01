@@ -1,4 +1,4 @@
-import io
+import json
 import os
 import string
 from collections import deque, Counter, namedtuple
@@ -6,24 +6,55 @@ from random import shuffle
 from tempfile import TemporaryDirectory
 
 import bs4
-import numpy
+import dask.dataframe
+import imageio
 import pandas
 import rasterio
 import requests
 import requests_cache
-from PIL import Image
+import webcolors
+from distributed import Client, LocalCluster
 from more_itertools import grouper
-from pandarallel import pandarallel
 from rasterio.mask import raster_geometry_mask
 from shapely.geometry import Polygon
 from slimit import ast
 from slimit.parser import Parser
 from slimit.visitors import nodevisitor
-from tqdm import tqdm
+
+ABSOLUTE_COLOR_MAPPING = {
+    '#ffffff': (0, 0),
+    '#ffeeaa': (1, 4),
+    '#ffe680': (5, 10),
+    '#ffdd55': (11, 25),
+    '#ffd42a': (26, 50),
+    '#ffcc00': (51, 100),
+    '#d4aa00': (101, 250),
+    '#aa8800': (251, 500),
+    '#806600': (501, 1000),
+    '#554400': (1001, 2500),
+    '#2b2200': (2500,),
+}
+
+RELATIVE_COLOR_MAPPING = {
+    '#ffffff': (0, 0),
+    '#ffeeaa': (0, 0.01),
+    '#ffe680': (0.01, 0.02),
+    '#ffdd55': (0.02, 0.05),
+    '#ffd42a': (0.05, 0.1),
+    '#ffcc00': (0.1, 0.2),
+    '#d4aa00': (0.2, 0.5),
+    '#aa8800': (0.5, 1),
+    '#806600': (1, 2),
+    '#554400': (2, 5),
+    '#2b2200': (5,),
+}
+
+AchternaamRecord = namedtuple("AchternaamRecord", ('achternaam', 'counts', 'link'))
 
 
 def get_directory(offset, letter, treffers):
-    return requests.get(f'https://www.cbgfamilienamen.nl/nfb/lijst_namen.php?offset={offset}&naam={letter}&treffers={treffers}&operator=bw')
+    return requests.get(
+        f'https://www.cbgfamilienamen.nl/nfb/lijst_namen.php?offset={offset}&naam={letter}&treffers={treffers}&operator=bw')
 
 
 def parse_javascript(javascript_code):
@@ -40,12 +71,13 @@ def parse_javascript(javascript_code):
 
 
 def add_gemeenten(row):
+    requests_cache.install_cache('meertens')
     directory = TemporaryDirectory()
     if row.link is not None:
         detail_page = requests.get(f'https://www.cbgfamilienamen.nl/nfb/{row.link}').text
         detail_page = bs4.BeautifulSoup(detail_page, features="html.parser")
         try:
-            row['gemeenten'] = parse_javascript(detail_page.select('script:not([async])')[0].text)
+            row['gemeenten'] = json.dumps(parse_javascript(detail_page.select('script:not([async])')[0].text))
         except IndexError:
             pass
         try:
@@ -62,56 +94,73 @@ def add_gemeenten(row):
                 image_data = requests.get(url).content
                 with open(os.path.join(directory.name, url.split("=")[-1]), 'wb') as w:
                     w.write(image_data)
-                image = Image.open(io.BytesIO(image_data))
+                image = imageio.imread(os.path.join(directory.name, url.split("=")[-1]), pilmode='RGB')
                 raster = rasterio.open(os.path.join(directory.name, url.split("=")[-1]))
                 gemeenten = {}
                 for area in detail_page.select('map > area'):
                     points = deque(int(x) for x in area.get('coords').split(','))
                     gemeente_mask = raster_geometry_mask(raster, [Polygon(grouper(points, 2))], invert=True)
-                    pixel_counter = Counter(numpy.array(image)[gemeente_mask[0]])
-                    gemeenten[area.get('alt')] = pixel_counter
+                    pixel_counter = Counter(filter(
+                        lambda x: x not in ['#808080', '#ffffff'] and x in ABSOLUTE_COLOR_MAPPING.keys(),
+                        (webcolors.rgb_to_hex(tuple(x)) for x in image[gemeente_mask[0]])))
+                    if pixel_counter and 'abs.png' in url:
+                        gemeenten[area.get('alt')] = ABSOLUTE_COLOR_MAPPING[pixel_counter.most_common(1)[0][0]]
+                    if pixel_counter and 'rel.png' in url:
+                        gemeenten[area.get('alt')] = RELATIVE_COLOR_MAPPING[pixel_counter.most_common(1)[0][0]]
                 os.unlink(os.path.join(directory.name, url.split("=")[-1]))
                 if 'abs.png' in url:
-                    row['abs_pixel_counters'] = gemeenten
+                    row['abs_pixel_counters'] = json.dumps(gemeenten)
                 if 'rel.png' in url:
-                    row['rel_pixel_counters'] = gemeenten
+                    row['rel_pixel_counters'] = json.dumps(gemeenten)
         except IndexError:
             pass
     return row
 
 
+def get_index_of_letter(letter):
+    requests_cache.install_cache('meertens')
+    achternamen = []
+    offset = 0
+    treffers = int(
+        requests.get(f'https://www.cbgfamilienamen.nl/nfb/lijst_namen.php?operator=bw&naam={letter}').text.split(
+            "treffers=")[1].split("&")[0])
+    while offset + 50 < treffers:
+        offset += 50
+        data = bs4.BeautifulSoup(get_directory(offset, letter, treffers).text, features="html.parser")
+
+        for achternaam in data.select('td.justification-right'):
+            tr = achternaam.parent
+            fields = tr.select('td')
+            achternaam = fields[0].text.strip()
+            try:
+                link = fields[0].select('a')[0].get('href')
+            except IndexError:
+                link = None
+            counts = fields[1].text.strip()
+            achternamen.append(AchternaamRecord(achternaam, counts, link))
+    return achternamen
+
+
 if __name__ == '__main__':
     requests_cache.install_cache('meertens')
-    tqdm.pandas()
-    pandarallel.initialize(progress_bar=True)
 
     letters = list(string.ascii_lowercase)
     shuffle(letters)
 
-    AchternaamRecord = namedtuple("AchernaamRecord", ('achternaam', 'counts', 'link'))
+    cluster = LocalCluster()
+    client = Client(cluster)
+
+    all_letters = client.map(get_index_of_letter, letters)
     achternamen = []
+    for letter in client.gather(all_letters):
+        for achternaam in letter:
+            achternamen.append(achternaam)
 
-    for letter in tqdm(['broe']):
-        offset = 0
-        treffers = int(
-            requests.get(f'https://www.cbgfamilienamen.nl/nfb/lijst_namen.php?operator=bw&naam={letter}').text.split(
-                "treffers=")[1].split("&")[0])
-        while offset + 50 < treffers:
-            offset += 50
-            data = bs4.BeautifulSoup(get_directory(offset, letter, treffers).text, features="html.parser")
-
-            for achternaam in data.select('td.justification-right'):
-                tr = achternaam.parent
-                fields = tr.select('td')
-                achternaam = fields[0].text.strip()
-                try:
-                    link = fields[0].select('a')[0].get('href')
-                except IndexError:
-                    link = None
-                counts = fields[1].text.strip()
-                achternamen.append(AchternaamRecord(achternaam, counts, link))
-
-    achternamen = pandas.DataFrame(achternamen)
-    achternamen = achternamen.progress_apply(add_gemeenten, axis=1)
+    achternamen = dask.dataframe.from_pandas(pandas.DataFrame(achternamen), npartitions=1024)
+    achternamen['abs_pixel_counters'] = ''
+    achternamen['gemeenten'] = ''
+    achternamen['rel_pixel_counters'] = ''
+    achternamen = achternamen.apply(add_gemeenten, axis=1).compute()
+    # meta={'achternaam': 'object', 'counts': 'object', 'link': 'object', 'abs_pixel_counters': 'object', 'gemeenten': 'object', 'rel_pixel_counters': 'object'}
     achternamen.to_csv('achternamen.csv.gz', compression='gzip')
     achternamen.to_csv('achternamen.csv')
