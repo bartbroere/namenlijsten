@@ -1,3 +1,4 @@
+ply==3.4
 beautifulsoup4
 dask[complete]
 imageio
