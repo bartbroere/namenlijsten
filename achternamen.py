@@ -90,29 +90,32 @@ def add_gemeenten(row):
             detail_pages = [detail_page]
         try:
             for detail_page in detail_pages:
-                map_image = detail_page.select('img[usemap]')[0].get('src')
-                url = f'https://www.cbgfamilienamen.nl/{map_image}'
-                image_data = requests.get(url).content
-                with open(os.path.join(directory.name, url.split("=")[-1]), 'wb') as w:
-                    w.write(image_data)
-                image = imageio.imread(os.path.join(directory.name, url.split("=")[-1]), pilmode='RGB')
-                raster = rasterio.open(os.path.join(directory.name, url.split("=")[-1]))
-                gemeenten = {}
-                for area in detail_page.select('map > area'):
-                    points = deque(int(x) for x in area.get('coords').split(','))
-                    gemeente_mask = raster_geometry_mask(raster, [Polygon(grouper(points, 2))], invert=True)
-                    pixel_counter = Counter(filter(
-                        lambda x: x not in ['#808080', '#ffffff'] and x in ABSOLUTE_COLOR_MAPPING.keys(),
-                        (webcolors.rgb_to_hex(tuple(x)) for x in image[gemeente_mask[0]])))
-                    if pixel_counter and 'abs.png' in url:
-                        gemeenten[area.get('alt')] = ABSOLUTE_COLOR_MAPPING[pixel_counter.most_common(1)[0][0]]
-                    if pixel_counter and 'rel.png' in url:
-                        gemeenten[area.get('alt')] = RELATIVE_COLOR_MAPPING[pixel_counter.most_common(1)[0][0]]
-                os.unlink(os.path.join(directory.name, url.split("=")[-1]))
-                if 'abs.png' in url:
-                    row['abs_pixel_counters'] = json.dumps(gemeenten)
-                if 'rel.png' in url:
-                    row['rel_pixel_counters'] = json.dumps(gemeenten)
+                try:
+                    map_image = detail_page.select('img[usemap]')[0].get('src')
+                    url = f'https://www.cbgfamilienamen.nl/{map_image}'
+                    image_data = requests.get(url).content
+                    with open(os.path.join(directory.name, url.split("=")[-1]), 'wb') as w:
+                        w.write(image_data)
+                    image = imageio.imread(os.path.join(directory.name, url.split("=")[-1]), pilmode='RGB')
+                    raster = rasterio.open(os.path.join(directory.name, url.split("=")[-1]))
+                    gemeenten = {}
+                    for area in detail_page.select('map > area'):
+                        points = deque(int(x) for x in area.get('coords').split(','))
+                        gemeente_mask = raster_geometry_mask(raster, [Polygon(grouper(points, 2))], invert=True)
+                        pixel_counter = Counter(filter(
+                            lambda x: x not in ['#808080', '#ffffff'] and x in ABSOLUTE_COLOR_MAPPING.keys(),
+                            (webcolors.rgb_to_hex(tuple(x)) for x in image[gemeente_mask[0]])))
+                        if pixel_counter and 'abs.png' in url:
+                            gemeenten[area.get('alt')] = ABSOLUTE_COLOR_MAPPING[pixel_counter.most_common(1)[0][0]]
+                        if pixel_counter and 'rel.png' in url:
+                            gemeenten[area.get('alt')] = RELATIVE_COLOR_MAPPING[pixel_counter.most_common(1)[0][0]]
+                    os.unlink(os.path.join(directory.name, url.split("=")[-1]))
+                    if 'abs.png' in url:
+                        row['abs_pixel_counters'] = json.dumps(gemeenten)
+                    if 'rel.png' in url:
+                        row['rel_pixel_counters'] = json.dumps(gemeenten)
+                 except ValueError:
+                    continue
         except IndexError:
             pass
     return row
