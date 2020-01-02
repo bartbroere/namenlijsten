@@ -2,6 +2,7 @@ import json
 import os
 import string
 from collections import deque, Counter, namedtuple
+from functools import lru_cache
 from random import shuffle
 from tempfile import TemporaryDirectory
 
@@ -52,6 +53,11 @@ RELATIVE_COLOR_MAPPING = {
 AchternaamRecord = namedtuple("AchternaamRecord", ('achternaam', 'counts', 'link'))
 
 
+@lru_cache(16)
+def rgb_to_hex(rgb):
+    return webcolors.rgb_to_hex(rgb)
+
+
 def get_directory(offset, letter, treffers):
     return requests.get(
         f'https://www.cbgfamilienamen.nl/nfb/lijst_namen.php?offset={offset}&naam={letter}&treffers={treffers}&operator=bw')
@@ -65,7 +71,12 @@ def parse_javascript(javascript_code, as_type=int):
     if "'GoogleAnalyticsObject'" not in strings_in_javascript:
         while strings_in_javascript:
             key = strings_in_javascript.popleft()
-            value = as_type(strings_in_javascript.popleft().replace(f"{key[:-1]} (", '').replace(")'", "").replace(",", ".").replace("%", ""))
+            value = as_type(strings_in_javascript.
+                            popleft().
+                            replace(f"{key[:-1]} (", '').
+                            replace(")'", "").
+                            replace(",", ".").
+                            replace("%", ""))
             councils[key[1:-1]] = value
     return councils
 
@@ -86,8 +97,8 @@ def add_gemeenten(row):
             rel_detail_page = requests.get(f'https://www.cbgfamilienamen.nl/nfb/{rel_detail_page}').text
             rel_detail_page = bs4.BeautifulSoup(rel_detail_page, features='html.parser')
             try:
-                row['rel_gemeenten'] = json.dumps(parse_javascript(detail_page.select('script:not([async])')[0].text), 
-                                                  as_type=float)
+                row['rel_gemeenten'] = json.dumps(parse_javascript(detail_page.select('script:not([async])')[0].text,
+                                                                   as_type=float))
             except IndexError:
                 pass
             detail_pages = [detail_page, rel_detail_page]
@@ -109,7 +120,7 @@ def add_gemeenten(row):
                         gemeente_mask = raster_geometry_mask(raster, [Polygon(grouper(points, 2))], invert=True)
                         pixel_counter = Counter(filter(
                             lambda x: x not in ['#808080', '#ffffff'] and x in ABSOLUTE_COLOR_MAPPING.keys(),
-                            (webcolors.rgb_to_hex(tuple(x)) for x in image[gemeente_mask[0]])))
+                            (rgb_to_hex(tuple(x)) for x in image[gemeente_mask[0]])))
                         if pixel_counter and 'abs.png' in url:
                             gemeenten[area.get('alt')] = ABSOLUTE_COLOR_MAPPING[pixel_counter.most_common(1)[0][0]]
                         if pixel_counter and 'rel.png' in url:
@@ -119,7 +130,7 @@ def add_gemeenten(row):
                         row['abs_pixel_counters'] = json.dumps(gemeenten)
                     if 'rel.png' in url:
                         row['rel_pixel_counters'] = json.dumps(gemeenten)
-                 except ValueError:
+                except ValueError:
                     continue
         except IndexError:
             pass
@@ -158,25 +169,25 @@ if __name__ == '__main__':
 
     cluster = LocalCluster(n_workers=64, threads_per_worker=1)
     client = Client(cluster)
-    
+
     # TODO change code block below to keep data in the Dask cluster, instead of up and down to the local context
     all_letters = client.map(get_index_of_letter, letters)
     achternamen = []
     for letter in client.gather(all_letters):
         for achternaam in letter:
             achternamen.append(achternaam)
-    
-    # TODO make unique on column achternaam here
-    achternamen = dask.dataframe.from_pandas(pandas.DataFrame(achternamen), npartitions=1024)
+
+    achternamen = pandas.DataFrame(achternamen).drop_duplicates()  # reduces from 406158 to 322292 entries
+    achternamen = dask.dataframe.from_pandas(achternamen, npartitions=8192)
     achternamen['abs_pixel_counters'] = ''
     achternamen['abs_gemeenten'] = ''
     achternamen['rel_gemeenten'] = ''
     achternamen['rel_pixel_counters'] = ''
     achternamen = achternamen.apply(add_gemeenten, axis=1).compute()
     # meta={'achternaam': 'object', 'counts': 'object', 'link': 'object', 'abs_pixel_counters': 'object', 'gemeenten': 'object', 'rel_pixel_counters': 'object'}
-    
+
     # TODO use the combination of absolute and relative counts to estimate the total resident count for each municipality
-    
+
     # TODO check the existence of the directory ./data/, and make if not there
     achternamen.to_csv('./data/achternamen.csv.gz', compression='gzip')
     achternamen.to_csv('./data/achternamen.csv')
