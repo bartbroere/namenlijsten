@@ -147,7 +147,7 @@ if __name__ == '__main__':
     letters = list(string.ascii_lowercase)
     shuffle(letters)
 
-    cluster = LocalCluster()
+    cluster = LocalCluster(n_workers=64, threads_per_worker=1)
     client = Client(cluster)
 
     all_letters = client.map(get_index_of_letter, letters)
@@ -162,5 +162,5 @@ if __name__ == '__main__':
     achternamen['rel_pixel_counters'] = ''
     achternamen = achternamen.apply(add_gemeenten, axis=1).compute()
     # meta={'achternaam': 'object', 'counts': 'object', 'link': 'object', 'abs_pixel_counters': 'object', 'gemeenten': 'object', 'rel_pixel_counters': 'object'}
-    achternamen.to_csv('achternamen.csv.gz', compression='gzip')
-    achternamen.to_csv('achternamen.csv')
+    achternamen.to_csv('./data/achternamen.csv.gz', compression='gzip')
+    achternamen.to_csv('./data/achternamen.csv')
