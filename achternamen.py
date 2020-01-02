@@ -165,7 +165,8 @@ if __name__ == '__main__':
     for letter in client.gather(all_letters):
         for achternaam in letter:
             achternamen.append(achternaam)
-
+    
+    # TODO make unique on column achternaam here
     achternamen = dask.dataframe.from_pandas(pandas.DataFrame(achternamen), npartitions=1024)
     achternamen['abs_pixel_counters'] = ''
     achternamen['abs_gemeenten'] = ''
