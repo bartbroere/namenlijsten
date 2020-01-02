@@ -57,7 +57,7 @@ def get_directory(offset, letter, treffers):
         f'https://www.cbgfamilienamen.nl/nfb/lijst_namen.php?offset={offset}&naam={letter}&treffers={treffers}&operator=bw')
 
 
-def parse_javascript(javascript_code):
+def parse_javascript(javascript_code, as_type=int):
     parser = Parser()
     tree = parser.parse(javascript_code)
     strings_in_javascript = deque(x.value for x in nodevisitor.visit(tree) if isinstance(x, ast.String))
@@ -65,7 +65,7 @@ def parse_javascript(javascript_code):
     if "'GoogleAnalyticsObject'" not in strings_in_javascript:
         while strings_in_javascript:
             key = strings_in_javascript.popleft()
-            value = int(strings_in_javascript.popleft().replace(f"{key[:-1]} (", '').replace(")'", ""))
+            value = as_type(strings_in_javascript.popleft().replace(f"{key[:-1]} (", '').replace(")'", "").replace(",", ".").replace("%", ""))
             councils[key[1:-1]] = value
     return councils
 
@@ -77,14 +77,19 @@ def add_gemeenten(row):
         detail_page = requests.get(f'https://www.cbgfamilienamen.nl/nfb/{row.link}').text
         detail_page = bs4.BeautifulSoup(detail_page, features="html.parser")
         try:
-            row['gemeenten'] = json.dumps(parse_javascript(detail_page.select('script:not([async])')[0].text))
-            # TODO also perform the parsing of javascript block for the page with relative counts
+            row['abs_gemeenten'] = json.dumps(parse_javascript(detail_page.select('script:not([async])')[0].text,
+                                                               as_type=int))
         except IndexError:
             pass
         try:
             rel_detail_page = detail_page.select('td.justification-left ~ td.justification-left > a')[0].get('href')
             rel_detail_page = requests.get(f'https://www.cbgfamilienamen.nl/nfb/{rel_detail_page}').text
             rel_detail_page = bs4.BeautifulSoup(rel_detail_page, features='html.parser')
+            try:
+                row['rel_gemeenten'] = json.dumps(parse_javascript(detail_page.select('script:not([async])')[0].text), 
+                                                  as_type=float)
+            except IndexError:
+                pass
             detail_pages = [detail_page, rel_detail_page]
         except IndexError:
             detail_pages = [detail_page]
@@ -163,7 +168,8 @@ if __name__ == '__main__':
 
     achternamen = dask.dataframe.from_pandas(pandas.DataFrame(achternamen), npartitions=1024)
     achternamen['abs_pixel_counters'] = ''
-    achternamen['gemeenten'] = ''
+    achternamen['abs_gemeenten'] = ''
+    achternamen['rel_gemeenten'] = ''
     achternamen['rel_pixel_counters'] = ''
     achternamen = achternamen.apply(add_gemeenten, axis=1).compute()
     # meta={'achternaam': 'object', 'counts': 'object', 'link': 'object', 'abs_pixel_counters': 'object', 'gemeenten': 'object', 'rel_pixel_counters': 'object'}
