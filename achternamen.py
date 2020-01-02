@@ -78,6 +78,7 @@ def add_gemeenten(row):
         detail_page = bs4.BeautifulSoup(detail_page, features="html.parser")
         try:
             row['gemeenten'] = json.dumps(parse_javascript(detail_page.select('script:not([async])')[0].text))
+            # TODO also perform the parsing of javascript block for the page with relative counts
         except IndexError:
             pass
         try:
@@ -149,7 +150,8 @@ if __name__ == '__main__':
 
     cluster = LocalCluster(n_workers=64, threads_per_worker=1)
     client = Client(cluster)
-
+    
+    # TODO change code block below to keep data in the Dask cluster, instead of up and down to the local context
     all_letters = client.map(get_index_of_letter, letters)
     achternamen = []
     for letter in client.gather(all_letters):
@@ -162,5 +164,9 @@ if __name__ == '__main__':
     achternamen['rel_pixel_counters'] = ''
     achternamen = achternamen.apply(add_gemeenten, axis=1).compute()
     # meta={'achternaam': 'object', 'counts': 'object', 'link': 'object', 'abs_pixel_counters': 'object', 'gemeenten': 'object', 'rel_pixel_counters': 'object'}
+    
+    # TODO use the combination of absolute and relative counts to estimate the total resident count for each municipality
+    
+    # TODO check the existence of the directory ./data/, and make if not there
     achternamen.to_csv('./data/achternamen.csv.gz', compression='gzip')
     achternamen.to_csv('./data/achternamen.csv')
