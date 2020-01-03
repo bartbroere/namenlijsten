@@ -97,8 +97,9 @@ def add_gemeenten(row):
             rel_detail_page = requests.get(f'https://www.cbgfamilienamen.nl/nfb/{rel_detail_page}').text
             rel_detail_page = bs4.BeautifulSoup(rel_detail_page, features='html.parser')
             try:
-                row['rel_gemeenten'] = json.dumps(parse_javascript(detail_page.select('script:not([async])')[0].text,
-                                                                   as_type=float))
+                row['rel_gemeenten'] = json.dumps(
+                    parse_javascript(rel_detail_page.select('script:not([async])')[0].text,
+                                     as_type=float))
             except IndexError:
                 pass
             detail_pages = [detail_page, rel_detail_page]
@@ -179,9 +180,9 @@ if __name__ == '__main__':
 
     achternamen = pandas.DataFrame(achternamen).drop_duplicates()  # reduces from 406158 to 322292 entries
     achternamen = dask.dataframe.from_pandas(achternamen, npartitions=8192)
-    achternamen['abs_pixel_counters'] = ''
     achternamen['abs_gemeenten'] = ''
     achternamen['rel_gemeenten'] = ''
+    achternamen['abs_pixel_counters'] = ''
     achternamen['rel_pixel_counters'] = ''
     achternamen = achternamen.apply(add_gemeenten, axis=1).compute()
     # meta={'achternaam': 'object', 'counts': 'object', 'link': 'object', 'abs_pixel_counters': 'object', 'gemeenten': 'object', 'rel_pixel_counters': 'object'}
