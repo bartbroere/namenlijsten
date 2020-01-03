@@ -120,7 +120,7 @@ def add_gemeenten(row):
                         points = deque(int(x) for x in area.get('coords').split(','))
                         gemeente_mask = raster_geometry_mask(raster, [Polygon(grouper(points, 2))], invert=True)
                         pixel_counter = Counter(filter(
-                            lambda x: x not in ['#808080', '#ffffff'] and x in ABSOLUTE_COLOR_MAPPING.keys(),
+                            lambda x: x != '#808080' and x in ABSOLUTE_COLOR_MAPPING.keys(),
                             (rgb_to_hex(tuple(x)) for x in image[gemeente_mask[0]])))
                         if pixel_counter and 'abs.png' in url:
                             gemeenten[area.get('alt')] = ABSOLUTE_COLOR_MAPPING[pixel_counter.most_common(1)[0][0]]
@@ -135,6 +135,29 @@ def add_gemeenten(row):
                     continue
         except IndexError:
             pass
+    return row
+
+
+def exactify(row):
+    exactified = {}
+    try:
+        if row['counts'] != "< 5":
+            assignable = int(row['counts'].replace(".", "")) - sum(int(x) for x in json.loads(row['abs_gemeenten']).values())
+            abs_pixel_counters = {k: v for k, v in json.loads(row['abs_pixel_counters']).items() if v != [0, 0]}
+            for exact_gemeente, value in json.loads(row['abs_gemeenten']).items():
+                del abs_pixel_counters[exact_gemeente.replace("\\", "")]
+                exactified[exact_gemeente.replace("\\", "")] = [value, value]
+            for k, v in abs_pixel_counters.items():
+                assignable -= v[0]
+                exactified[k] = [v[0]]
+            for k, v in abs_pixel_counters.items():
+                exactified[k].append(min(exactified[k][0] + assignable, abs_pixel_counters[k][1]))
+            row['exactified'] = json.dumps(exactified)
+    except TypeError:
+        pass
+    except ValueError:
+        pass
+    row['counts'] = row['counts'].replace(".", "")
     return row
 
 
@@ -184,7 +207,9 @@ if __name__ == '__main__':
     achternamen['rel_gemeenten'] = ''
     achternamen['abs_pixel_counters'] = ''
     achternamen['rel_pixel_counters'] = ''
-    achternamen = achternamen.apply(add_gemeenten, axis=1).compute()
+    achternamen['exactified'] = ''
+    achternamen = achternamen.apply(add_gemeenten, axis=1)
+    achternamen = achternamen.apply(exactify, axis=1).compute()
     # meta={'achternaam': 'object', 'counts': 'object', 'link': 'object', 'abs_pixel_counters': 'object', 'gemeenten': 'object', 'rel_pixel_counters': 'object'}
 
     # TODO use the combination of absolute and relative counts to estimate the total resident count for each municipality
