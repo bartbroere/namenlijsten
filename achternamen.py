@@ -2,7 +2,7 @@ import json
 import os
 import string
 from collections import deque, Counter, namedtuple
-from functools import lru_cache
+from functools import lru_cache, partial
 from random import shuffle
 from tempfile import TemporaryDirectory
 
@@ -162,6 +162,16 @@ def exactify(row):
     return row
 
 
+def rel_to_abs(resident_counts, row):
+    rel_pixel_counters = json.loads(row['rel_pixel_counters'])  # TODO have the JSON dumping done later
+    rel_to_abs_pixel_counters = {}
+    for k, v in rel_pixel_counters:
+        rel_to_abs_pixel_counters[k] = [int(v[0] * resident_counts[k]),
+                                        int(v[1] * resident_counts[k])]
+    row['rel_to_abs_pixel_counters'] = json.dumps(rel_to_abs_pixel_counters)
+    return row
+
+
 def get_index_of_letter(letter):
     requests_cache.install_cache('meertens')
     achternamen = []
@@ -208,6 +218,7 @@ if __name__ == '__main__':
     achternamen['rel_gemeenten'] = ''
     achternamen['abs_pixel_counters'] = ''
     achternamen['rel_pixel_counters'] = ''
+    achternamen['rel_to_abs_pixel_counters'] = ''
     achternamen['exactified'] = ''
     achternamen = achternamen.apply(add_gemeenten, axis=1)
     achternamen = achternamen.apply(exactify, axis=1)
@@ -224,6 +235,9 @@ if __name__ == '__main__':
                         resident_counts[k] = resident_count
                 except KeyError:
                     continue
+
+    rel_to_abs = partial(rel_to_abs, resident_counts)
+    achternamen = achternamen.apply(rel_to_abs, axis=1)
 
     # meta={'achternaam': 'object', 'counts': 'object', 'link': 'object', 'abs_pixel_counters': 'object', 'gemeenten': 'object', 'rel_pixel_counters': 'object'}
 
