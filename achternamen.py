@@ -9,6 +9,7 @@ from tempfile import TemporaryDirectory
 import bs4
 import dask.dataframe
 import imageio
+import numpy
 import pandas
 import rasterio
 import requests
@@ -209,7 +210,21 @@ if __name__ == '__main__':
     achternamen['rel_pixel_counters'] = ''
     achternamen['exactified'] = ''
     achternamen = achternamen.apply(add_gemeenten, axis=1)
-    achternamen = achternamen.apply(exactify, axis=1).compute()
+    achternamen = achternamen.apply(exactify, axis=1)
+
+    resident_counts = {}
+    for row in achternamen.itertuples():
+        if row.rel_gemeenten is not numpy.nan:
+            rel_gemeenten = json.loads(row.rel_gemeenten)
+            abs_gemeenten = json.loads(row.abs_gemeenten)
+            for k, v in rel_gemeenten.items():
+                try:
+                    resident_count = abs_gemeenten[k] / rel_gemeenten[k] * 100
+                    if resident_counts.get(k, .1) % 1. != 0:  # TODO histogram maybe
+                        resident_counts[k] = resident_count
+                except KeyError:
+                    continue
+
     # meta={'achternaam': 'object', 'counts': 'object', 'link': 'object', 'abs_pixel_counters': 'object', 'gemeenten': 'object', 'rel_pixel_counters': 'object'}
 
     # TODO use the combination of absolute and relative counts to estimate the total resident count for each municipality
