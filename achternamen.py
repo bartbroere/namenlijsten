@@ -220,7 +220,7 @@ if __name__ == '__main__':
             for k, v in rel_gemeenten.items():
                 try:
                     resident_count = abs_gemeenten[k] / rel_gemeenten[k] * 100
-                    if resident_counts.get(k, .1) % 1. != 0:  # TODO histogram maybe
+                    if resident_counts.get(k, .1) % 1. != 0:  # TODO histogram maybe, or... sort by the remainder in descending order and pick the first
                         resident_counts[k] = resident_count
                 except KeyError:
                     continue
