@@ -3,6 +3,7 @@ import os
 import string
 from collections import deque, Counter, namedtuple
 from functools import lru_cache, partial
+from json import JSONDecodeError
 from random import shuffle
 from tempfile import TemporaryDirectory
 
@@ -85,8 +86,8 @@ def parse_javascript(javascript_code, as_type=int):
 def add_gemeenten(row):
     requests_cache.install_cache('meertens')
     directory = TemporaryDirectory()
-    if row.link is not None:
-        detail_page = requests.get(f'https://www.cbgfamilienamen.nl/nfb/{row.link}').text
+    if row['link'] is not None:
+        detail_page = requests.get(f'https://www.cbgfamilienamen.nl/nfb/{row["link"]}').text
         detail_page = bs4.BeautifulSoup(detail_page, features="html.parser")
         try:
             row['abs_gemeenten'] = json.dumps(parse_javascript(detail_page.select('script:not([async])')[0].text,
