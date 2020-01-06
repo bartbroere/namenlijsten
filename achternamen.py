@@ -222,20 +222,23 @@ if __name__ == '__main__':
     achternamen['rel_to_abs_pixel_counters'] = ''
     achternamen['exactified'] = ''
     achternamen = achternamen.apply(add_gemeenten, axis=1)
-    achternamen = achternamen.apply(exactify, axis=1)
+    achternamen = achternamen.apply(exactify, axis=1).compute()
 
     resident_counts = {}
     for row in achternamen.itertuples():
         if row.rel_gemeenten is not numpy.nan:
-            rel_gemeenten = json.loads(row.rel_gemeenten)
-            abs_gemeenten = json.loads(row.abs_gemeenten)
-            for k, v in rel_gemeenten.items():
-                try:
-                    resident_count = abs_gemeenten[k] / rel_gemeenten[k] * 100
-                    if resident_counts.get(k, .1) % 1. != 0:  # TODO histogram maybe, or... sort by the remainder in descending order and pick the first
-                        resident_counts[k] = resident_count
-                except KeyError:
-                    continue
+            try:
+                rel_gemeenten = json.loads(row.rel_gemeenten)
+                abs_gemeenten = json.loads(row.abs_gemeenten)
+                for k, v in rel_gemeenten.items():
+                    try:
+                        resident_count = abs_gemeenten[k] / rel_gemeenten[k] * 100
+                        if resident_counts.get(k, .1) % 1. != 0:  # TODO histogram maybe, or... sort by the remainder in descending order and pick the first
+                            resident_counts[k] = resident_count
+                    except KeyError:
+                        continue
+            except JSONDecodeError:
+                continue
 
     rel_to_abs = partial(rel_to_abs, resident_counts)
     achternamen = achternamen.apply(rel_to_abs, axis=1)
