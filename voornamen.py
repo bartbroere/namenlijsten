@@ -13,8 +13,8 @@ def parse_table(page):
     return list(more_itertools.chunked([x.text for x in page.find_all('td')][3:], 3))
 
 
-names = []
-for letter in 'bcdefghijklmnoprstuvwxyz':
+for letter in string.ascii_lowercase:
+    names = []
     i = 1
     results = True
 
