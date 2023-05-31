@@ -1,9 +1,10 @@
 import json
+import os
 import string
-from bs4 import BeautifulSoup
-import requests
-from tqdm import tqdm
+
 import more_itertools
+import requests
+from bs4 import BeautifulSoup
 from ratelimit import limits, sleep_and_retry
 
 
@@ -29,5 +30,12 @@ for letter in string.ascii_lowercase:
         w.write(json.dumps(names))
 
 
+all_names = set()
+for letter in string.ascii_lowercase:
+    with open(f'{letter}.json', 'r') as f:
+        data = [tuple(x) for x in json.loads(f.read())]
+        all_names.update(data)
+    os.unlink(f'{letter}.json')
 
-print()
+with open('voornamen.json', 'w') as w:
+    w.write(json.dumps(list(sorted(all_names))))
